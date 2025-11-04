@@ -12,7 +12,7 @@ Compile BRUCE full-body kinematics ahead of time (AOT) using Numba
 '''
 
 from numba.pycc import CC
-from Settings.BRUCE_macros import *
+from Library.Settings.BRUCE_macros import *
 
 
 cc = CC('BRUCE_kinematics')
@@ -692,6 +692,7 @@ def robotFK(R, p, w, bv,
     dqr = np.array([rd1, rd2, rd3, rd4, rd5])
     dql = np.array([ld1, ld2, ld3, ld4, ld5])
 
+    print('w',w.shape, 'bv',bv.shape, 'dqr',dqr.shape, 'dql',dql.shape)
     dqAll = np.hstack((w, bv, dqr, dql))
 
     # foot velocity in world frame

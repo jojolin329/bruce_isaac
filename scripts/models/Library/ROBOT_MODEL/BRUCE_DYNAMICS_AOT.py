@@ -12,7 +12,7 @@ Compile BRUCE full-body dynamics ahead of time (AOT) using Numba
 '''
 
 from numba.pycc import CC
-from Settings.BRUCE_macros import *
+from Library.Settings.BRUCE_macros import *
 
 
 cc = CC('BRUCE_dynamics')

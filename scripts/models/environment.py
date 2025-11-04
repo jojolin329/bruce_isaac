@@ -33,8 +33,9 @@ from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.sensors import ContactSensorCfg, ImuCfg
+from isaaclab.utils.math import matrix_from_quat, euler_xyz_from_quat
 # from omni.isaac.core.utils.rotations import euler_angles_to_quat
-from Library.Kinematics import *
+from Library.GAF_controller import ContactForceController
 
 
 # This dictionary has keys ordered to match the typical joint order from the simulator.
@@ -92,7 +93,7 @@ kneeling_pos ={
 
 BRUCE_CONFIG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/home/lin/Desktop/bruce/scripts/models/bruce.usd",
+        usd_path="/home/lin/Desktop/bruce_isaac/scripts/models/bruce.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False  # try True if you still see initial sag
@@ -262,12 +263,16 @@ def main():
     # Design scene
     scene_cfg = NewRobotsSceneCfg(args_cli.num_envs, env_spacing=3.0)
     scene = InteractiveScene(scene_cfg)
+
+    # Build controllers for each environment
+    controller = [ContactForceController(idx) for idx in range(args_cli.num_envs)]
+    
     # Play the simulator
     sim.reset()
     bruce_robot = scene["Bruce"]
     imu = scene["imu_base"]
     num_envs = args_cli.num_envs
-    joint_names = bruce_robot.joint_names
+    joint_names = bruce_robot.data.joint_names
 
     start_pos = torch.zeros((num_envs, len(joint_names)), dtype=torch.float32, device=sim.device)
     target_pos = torch.tensor(
@@ -296,54 +301,85 @@ def main():
     # Step 4: Maintain final posture
     # ------------------------------------------------------------------
     while simulation_app.is_running():
+        current_time = time.time()
         lleg_ind = [0, 4, 8, 12, 14]  # Indices of leg joints in the full joint array
         rleg_ind = [1, 5, 9, 13, 15]
-        joint_pos = bruce_robot.joint_pos
-        joint_vel = bruce_robot.joint_vel
-        quat_base = bruce_robot.root_link_quat_w
-        quat_base1 = bruce_robot.body_link_quat_w
-        print(quat_base, quat_base1)
+        larm_ind = [2, 6, 10]
+        rarm_ind = [3, 7, 11]
+        joint_pos = bruce_robot.data.joint_pos
+        joint_vel = bruce_robot.data.joint_vel
 
-        imu_acc = imu.data.data.lin_acc_b
-        imu_ang_vel = imu.data.data.ang_vel_b
-        print("IMU ang_vel:", imu_ang_vel, torch.size(imu_ang_vel))
+
+        quat_base = bruce_robot.data.root_link_quat_w
+        imu_acc = imu.data.lin_acc_b
+        imu_ang_vel = imu.data.ang_vel_b
         R_wb = matrix_from_quat(quat_base)
-        w_bb = torch.matmul(R_wb.transpose(-2, -1), imu_ang_vel).squeeze(-1)
-        p_wb = bruce_robot.root_link_pos_w
-        v_wb = bruce_robot.root_link_vel_w
-        a_wb = torch.matmul(R_wb, imu_acc.unsqueeze).squeeze(-1)
-        v_bb = torch.matmul(R_wb.transpose(-2, -1), v_wb).squeeze(-1)
+        w_bb = torch.matmul(R_wb.transpose(-2, -1), imu_ang_vel.unsqueeze(-1)).squeeze(-1) # angular velocity expressed in base frame
+        p_wb = bruce_robot.data.root_link_pos_w
+        v_wb = bruce_robot.data.root_link_vel_w[:, :3] # linear velocity expressed in world frame
+        a_wb = torch.matmul(R_wb, imu_acc.unsqueeze(-1)).squeeze(-1)  # linear acceleration expressed in world frame
+        v_bb = torch.matmul(R_wb.transpose(-2, -1), v_wb.unsqueeze(-1)).squeeze(-1)
+        euler_angles = euler_xyz_from_quat(quat_base)  # linear velocity expressed in base frame
+
+        roll, pitch, yaw= euler_angles[0].cpu().numpy(), euler_angles[1].cpu().numpy(), euler_angles[2].cpu().numpy()
+        #Convert GPU tensors to numpy for easier matrix operations
+        R_wb = R_wb.cpu().numpy()
+        p_wb = p_wb.cpu().numpy()
+        w_bb = w_bb.cpu().numpy()
+        v_bb = v_bb.cpu().numpy()
+        a_wb = a_wb.cpu().numpy()
+        v_wb = v_wb.cpu().numpy()
+        left_legs = joint_pos[:, lleg_ind].cpu().numpy()
+        right_legs = joint_pos[:, rleg_ind].cpu().numpy()
+        left_leg_vel = joint_vel[:, lleg_ind].cpu().numpy()
+        right_leg_vel = joint_vel[:, rleg_ind].cpu().numpy()
+
+        left_arms = joint_pos[:, larm_ind].cpu().numpy()
+        right_arms = joint_pos[:, rarm_ind].cpu().numpy()
+        left_arm_vel = joint_vel[:, larm_ind].cpu().numpy()
+        right_arm_vel = joint_vel[:, rarm_ind].cpu().numpy()
+
+        tau_list = []
+        #Input joint configurations and robot states to the controller
+        for i, ctrl in enumerate(controller):
+            print('left leg joint pos:', left_legs[i].shape)
+            ctrl.get_robot_state(
+                left_legs[i], right_legs[i],
+                left_leg_vel[i], right_leg_vel[i],
+                left_arms[i], right_arms[i],
+                left_arm_vel[i], right_arm_vel[i],
+                R_wb[i], p_wb[i], w_bb[i], v_bb[i], a_wb[i], v_wb[i]
+            )
+            kPc = [100, 200, 300]  # position gains
+            kDc = [5, 5, 10]     # velocity gains
+            ctrl.compute(kPc, kDc,roll[i], pitch[i], yaw[i])
+            tau = ctrl.get_tau()
+            # reorganize to isaac lab joint order
+            tau_isaac = np.zeros(len(joint_names))
+            print('Computed tau:', tau.shape)
+
+            # Unpack internal torques
+            rleg_tau = tau[0:5]
+            lleg_tau = tau[5:10]
+            rarm_tau = tau[10:13]
+            larm_tau = tau[13:16]
+
+            # Fill them back into Isaac order
+            tau_isaac[rleg_ind] = rleg_tau
+            tau_isaac[lleg_ind] = lleg_tau
+            tau_isaac[rarm_ind] = rarm_tau
+            tau_isaac[larm_ind] = larm_tau
+
+            tau_list.append(tau_isaac)
 
 
-        left_legs = joint_pos[:, lleg_ind]
-        right_legs = joint_pos[:, rleg_ind]
-        left_leg_vel = joint_vel[:, lleg_ind]
-        right_leg_vel = joint_vel[:, rleg_ind]
-
-        # Acquiring IMU data
-
-
-
-        #Leg Forward Kinematics, get all information in base frame
-        p_bt_r, v_bt_r, Jv_bt_r, dJv_bt_r,
-        p_bh_r, v_bh_r, Jv_bh_r, dJv_bh_r,
-        p_ba_r, v_ba_r, Jv_ba_r, dJv_ba_r,
-        p_bf_r, v_bf_r, R_bf_r, Jw_bf_r, dJw_bf_r,
-        p_bt_l, v_bt_l, Jv_bt_l, dJv_bt_l,
-        p_bh_l, v_bh_l, Jv_bh_l, dJv_bh_l,
-        p_ba_l, v_ba_l, Jv_ba_l, dJv_ba_l,
-        p_bf_l, v_bf_l, R_bf_l, Jw_bf_l, dJw_bf_l=leg_fk(left_legs, right_legs, left_leg_vel, right_leg_vel)
-
-        #Robot Kinematics, get all information in world frame
-
-
-
-
-
-        bruce_robot.set_joint_position_target(target_pos)
+        tau_tensor = torch.tensor(tau_list, dtype=torch.float32, device=sim.device)
+        bruce_robot.set_joint_effort_target(tau_tensor)
         scene.write_data_to_sim()
         sim.step()
         scene.update(sim.get_physics_dt())
+        print("Simulation time:", time.time() - current_time)
+        time.sleep(0.05)  # to avoid busy-waiting
 
 # Run
 if __name__ == "__main__":
