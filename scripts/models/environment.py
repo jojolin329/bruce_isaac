@@ -342,7 +342,6 @@ def main():
         tau_list = []
         #Input joint configurations and robot states to the controller
         for i, ctrl in enumerate(controller):
-            print('left leg joint pos:', left_legs[i].shape)
             ctrl.get_robot_state(
                 left_legs[i], right_legs[i],
                 left_leg_vel[i], right_leg_vel[i],
@@ -350,13 +349,12 @@ def main():
                 left_arm_vel[i], right_arm_vel[i],
                 R_wb[i], p_wb[i], w_bb[i], v_bb[i], a_wb[i], v_wb[i]
             )
-            kPc = [100, 200, 300]  # position gains
-            kDc = [5, 5, 10]     # velocity gains
+            kPc = [50,50, 100]  # position gains
+            kDc = [1,1,1.5]     # velocity gains
             ctrl.compute(kPc, kDc,roll[i], pitch[i], yaw[i])
             tau = ctrl.get_tau()
             # reorganize to isaac lab joint order
             tau_isaac = np.zeros(len(joint_names))
-            print('Computed tau:', tau.shape)
 
             # Unpack internal torques
             rleg_tau = tau[0:5]
@@ -379,7 +377,7 @@ def main():
         sim.step()
         scene.update(sim.get_physics_dt())
         print("Simulation time:", time.time() - current_time)
-        time.sleep(0.05)  # to avoid busy-waiting
+        time.sleep(0.1)  # to avoid busy-waiting
 
 # Run
 if __name__ == "__main__":

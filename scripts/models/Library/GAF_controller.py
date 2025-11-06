@@ -177,8 +177,7 @@ class ContactForceController:
         if abs(comPosError.item(2)) >= 0.001:
             self.integrator += comPosError * 0.002
 
-        comVelDes = math.sqrt(self.gGrav / zVc) * (comPosDes - comPos)
-        comVelError = comVelDes - comVel
+        comVelError = -math.sqrt(self.gGrav / zVc) * (comPosDes - comPos)
 
         Kp=np.diag(kPc)
         Kd=np.diag(kDc)
@@ -278,7 +277,6 @@ class ContactForceController:
         # Add arm position control torques, operate element-wise multiplication should use *
         
         arm_joint_tau = arm_p_gains *(arm_goal_target - qJoints[10:16]) + arm_d_gains * (-dqJoints[10:16])
-        print('Arm joint tau:', arm_joint_tau, arm_joint_tau.shape)
 
 
         # Add arm position control torques
