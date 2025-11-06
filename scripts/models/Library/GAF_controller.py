@@ -98,7 +98,7 @@ class ContactForceController:
                                                                 l1, l2, l3, l4, l5,
                                                                 dr1, dr2, dr3, dr4, dr5,
                                                                 dl1, dl2, dl3, dl4, dl5)
-
+        print('Right foot pos:', p_bf_r.flatten(), 'left joint pos:', l1, l2, l3, l4, l5)
         # compute robot forward kinematics
         p_wt_r, v_wt_r, Jv_wt_r, dJvdq_wt_r, \
         p_wh_r, v_wh_r, Jv_wh_r, dJvdq_wh_r, \
@@ -142,7 +142,7 @@ class ContactForceController:
         self.v_wg = v_wg
         self.H = H
         self.CG = CG
-
+        print('CoM pos:', p_wg.flatten())
 
     
     def compute(self, kPc, kDc, roll, pitch, yaw):
@@ -159,7 +159,7 @@ class ContactForceController:
 
         comPos = np.reshape(p_wg, (3, 1))
         comVel = np.reshape(v_wg, (3, 1))
-        zVc = 0.33
+        zVc = 0.42
 
         # Initialize desired DCM
         if counter == 0 or self.dcmPosDes is None:

@@ -65,31 +65,6 @@ bruce_init_dict = {
     "ankle_pitch_r": 0.5,
 }
 
-kneeling_pos ={
-# Yaw
-    "hip_yaw_l": 0.0,
-    "hip_yaw_r": 0.0,
-    # Shoulder Pitch
-    "shoulder_pitch_l": 0.0,
-    "shoulder_pitch_r": 0.0,
-    # Roll
-    "hip_roll_l": 0.0,
-    "hip_roll_r": 0.0,
-    "shoulder_roll_l": 0.0,
-    "shoulder_roll_r": 0.0,
-    # Hip Pitch
-    "hip_pitch_l": 0.0,
-    "hip_pitch_r": 0.0,
-    # Elbow Pitch
-    "elbow_pitch_l": 0.0,
-    "elbow_pitch_r": 0.0,
-    # Knee Pitch
-    "knee_pitch_l": -1.57,
-    "knee_pitch_r": -1.57,
-    # Ankle Pitch
-    "ankle_pitch_l": 0.0,
-    "ankle_pitch_r": 0.0,
-}
 
 BRUCE_CONFIG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
@@ -308,6 +283,8 @@ def main():
         rarm_ind = [3, 7, 11]
         joint_pos = bruce_robot.data.joint_pos
         joint_vel = bruce_robot.data.joint_vel
+
+        print("Joint positions:", joint_pos)
 
 
         quat_base = bruce_robot.data.root_link_quat_w
