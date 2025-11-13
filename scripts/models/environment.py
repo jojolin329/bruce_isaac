@@ -36,6 +36,7 @@ from isaaclab.sensors import ContactSensorCfg, ImuCfg
 from isaaclab.utils.math import matrix_from_quat, euler_xyz_from_quat
 # from omni.isaac.core.utils.rotations import euler_angles_to_quat
 from Library.GAF_controller import ContactForceController
+from math import pi
 
 
 # This dictionary has keys ordered to match the typical joint order from the simulator.
@@ -66,9 +67,12 @@ bruce_init_dict = {
 }
 
 
+
+
+
 BRUCE_CONFIG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/home/lin/Desktop/bruce_isaac/scripts/models/bruce.usd",
+        usd_path="/home/dromoi-lab/Desktop/bruce_isaac/scripts/models/bruce.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False  # try True if you still see initial sag
@@ -85,83 +89,77 @@ BRUCE_CONFIG = ArticulationCfg(
 
     actuators={
 
-        # Right leg joints
-        "right_leg": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "hip_yaw_r", "hip_roll_r", "hip_pitch_r", "knee_pitch_r", "ankle_pitch_r"
-            ],
-            stiffness={
-                "hip_yaw_r": 100,
-                "hip_roll_r": 100,
-                "hip_pitch_r": 100,
-                "knee_pitch_r": 50,
-                "ankle_pitch_r": 50,
-            },
-            damping={
-                "hip_yaw_r": 2.0,
-                "hip_roll_r": 4.6,
-                "hip_pitch_r": 1.6,
-                "knee_pitch_r": 1.6,
-                "ankle_pitch_r": 0.006,
-            },
-        ),
+        # Legs (both right and left)
+    "legs": ImplicitActuatorCfg(
+        joint_names_expr=[
+            # Right leg
+            "hip_yaw_r", "hip_roll_r", "hip_pitch_r", "knee_pitch_r", "ankle_pitch_r",
+            # Left leg
+            "hip_yaw_l", "hip_roll_l", "hip_pitch_l", "knee_pitch_l", "ankle_pitch_l",
+        ],
+        stiffness={
+            # Right leg
+            "hip_yaw_r": 100,
+            "hip_roll_r": 100,
+            "hip_pitch_r": 100,
+            "knee_pitch_r": 50,
+            "ankle_pitch_r": 50,
+            # Left leg
+            "hip_yaw_l": 100,
+            "hip_roll_l": 100,
+            "hip_pitch_l": 100,
+            "knee_pitch_l": 50,
+            "ankle_pitch_l": 50,
+        },
+        damping={
+            # Right leg
+            "hip_yaw_r": 2.0,
+            "hip_roll_r": 4.6,
+            "hip_pitch_r": 1.6,
+            "knee_pitch_r": 1.6,
+            "ankle_pitch_r": 0.006,
+            # Left leg
+            "hip_yaw_l": 2.0,
+            "hip_roll_l": 4.6,
+            "hip_pitch_l": 1.6,
+            "knee_pitch_l": 1.6,
+            "ankle_pitch_l": 0.006,
+        },
+        armature = 0.01
+    ),
 
-        # Left leg joints
-        "left_leg": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "hip_yaw_l", "hip_roll_l", "hip_pitch_l", "knee_pitch_l", "ankle_pitch_l"
-            ],
-            stiffness={
-                "hip_yaw_l": 100,
-                "hip_roll_l": 100,
-                "hip_pitch_l": 100,
-                "knee_pitch_l": 50,
-                "ankle_pitch_l": 50,
-            },
-            damping={
-                "hip_yaw_l": 2.0,
-                "hip_roll_l": 4.6,
-                "hip_pitch_l": 1.6,
-                "knee_pitch_l": 1.6,
-                "ankle_pitch_l": 0.006,
-            },
-        ),
+    # Arms (both right and left)
+    "arms": ImplicitActuatorCfg(
+        joint_names_expr=[
+            # Right arm
+            "shoulder_pitch_r", "shoulder_roll_r", "elbow_pitch_r",
+            # Left arm
+            "shoulder_pitch_l", "shoulder_roll_l", "elbow_pitch_l",
+        ],
+        stiffness={
+            # Right arm
+            "shoulder_pitch_r": 1.6,
+            "shoulder_roll_r": 1.6,
+            "elbow_pitch_r": 1.6,
+            # Left arm
+            "shoulder_pitch_l": 1.6,
+            "shoulder_roll_l": 1.6,
+            "elbow_pitch_l": 1.6,
+        },
+        damping={
+            # Right arm
+            "shoulder_pitch_r": 0.03,
+            "shoulder_roll_r": 0.03,
+            "elbow_pitch_r": 0.03,
+            # Left arm
+            "shoulder_pitch_l": 0.03,
+            "shoulder_roll_l": 0.03,
+            "elbow_pitch_l": 0.03,
+        },
+        armature = 0.01
+    ),
 
-        # Right arm joints
-        "right_arm": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "shoulder_pitch_r", "shoulder_roll_r", "elbow_pitch_r"
-            ],
-            stiffness={
-                "shoulder_pitch_r": 1.6,
-                "shoulder_roll_r": 1.6,
-                "elbow_pitch_r": 1.6,
-            },
-            damping={
-                "shoulder_pitch_r": 0.03,
-                "shoulder_roll_r": 0.03,
-                "elbow_pitch_r": 0.03,
-            },
-        ),
-
-        # Left arm joints
-        "left_arm": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "shoulder_pitch_l", "shoulder_roll_l", "elbow_pitch_l"
-            ],
-            stiffness={
-                "shoulder_pitch_l": 1.6,
-                "shoulder_roll_l": 1.6,
-                "elbow_pitch_l": 1.6,
-            },
-            damping={
-                "shoulder_pitch_l": 0.03,
-                "shoulder_roll_l": 0.03,
-                "elbow_pitch_l": 0.03,
-            },
-        ),
-
-    }
+        }
 
 )
 
@@ -256,11 +254,13 @@ def main():
     ).repeat(num_envs, 1)
 
     zero_vel = torch.zeros_like(start_pos)
+    zero_stiff = torch.zeros_like(start_pos)
+    zero_damp = torch.zeros_like(start_pos)
 
     # ------------------------------------------------------------------
     # Step 3: Interpolate smoothly from zero -> target pose
     # ------------------------------------------------------------------
-    interp_steps = 240  # ~4 seconds if dt=1/60
+    interp_steps = 200  # ~4 seconds if dt=1/60
     for t in range(interp_steps):
         alpha = (t + 1) / interp_steps
         blended = (1 - alpha) * start_pos + alpha * target_pos
@@ -275,7 +275,24 @@ def main():
     # ------------------------------------------------------------------
     # Step 4: Maintain final posture
     # ------------------------------------------------------------------
+    arm_pd = torch.tensor([0.0, 0.0, 0.0, 
+                           0.0, 0.0, 0.0], dtype=torch.float32, device=sim.device)
+    leg_pd = torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0,
+                           0.0, 0.0, 0.0, 0.0, 0.0,], dtype=torch.float32, device=sim.device)
+
+    bruce_robot.actuators["legs"].stiffness = leg_pd
+    bruce_robot.actuators["arms"].stiffness = arm_pd
+    bruce_robot.actuators["legs"].damping = leg_pd  
+    bruce_robot.actuators["arms"].damping = arm_pd
+
+
+    bruce_robot.write_joint_stiffness_to_sim(zero_stiff)
+    bruce_robot.write_joint_damping_to_sim(zero_damp)
+    bruce_robot.reset()
+
+
     while simulation_app.is_running():
+        # print('applied torque', bruce_robot.data.applied_torque)
         current_time = time.time()
         lleg_ind = [0, 4, 8, 12, 14]  # Indices of leg joints in the full joint array
         rleg_ind = [1, 5, 9, 13, 15]
@@ -284,21 +301,27 @@ def main():
         joint_pos = bruce_robot.data.joint_pos
         joint_vel = bruce_robot.data.joint_vel
 
-        print("Joint positions:", joint_pos)
-
 
         quat_base = bruce_robot.data.root_link_quat_w
         imu_acc = imu.data.lin_acc_b
-        imu_ang_vel = imu.data.ang_vel_b
-        R_wb = matrix_from_quat(quat_base)
-        w_bb = torch.matmul(R_wb.transpose(-2, -1), imu_ang_vel.unsqueeze(-1)).squeeze(-1) # angular velocity expressed in base frame
-        p_wb = bruce_robot.data.root_link_pos_w
-        v_wb = bruce_robot.data.root_link_vel_w[:, :3] # linear velocity expressed in world frame
-        a_wb = torch.matmul(R_wb, imu_acc.unsqueeze(-1)).squeeze(-1)  # linear acceleration expressed in world frame
-        v_bb = torch.matmul(R_wb.transpose(-2, -1), v_wb.unsqueeze(-1)).squeeze(-1)
-        euler_angles = euler_xyz_from_quat(quat_base)  # linear velocity expressed in base frame
 
-        roll, pitch, yaw= euler_angles[0].cpu().numpy(), euler_angles[1].cpu().numpy(), euler_angles[2].cpu().numpy()
+        R_wb = matrix_from_quat(quat_base)
+        w_bb = bruce_robot.data.root_link_ang_vel_b# angular velocity expressed in base frame
+        p_wb = bruce_robot.data.root_link_pos_w
+        v_wb = bruce_robot.data.root_link_lin_vel_w # linear velocity expressed in world frame
+
+        a_wb = torch.matmul(R_wb, imu_acc.unsqueeze(-1)).squeeze(-1)  # linear acceleration expressed in world frame
+        v_bb = bruce_robot.data.root_link_lin_vel_b  # linear velocity expressed in body frame
+
+        # quat_base: (num_envs, 4)
+
+        # This returns THREE tensors, each of shape (num_envs,)
+        roll, pitch, yaw = euler_xyz_from_quat(quat_base)
+
+        roll = roll.cpu().numpy()
+        pitch = pitch.cpu().numpy()
+        yaw = yaw.cpu().numpy()
+
         #Convert GPU tensors to numpy for easier matrix operations
         R_wb = R_wb.cpu().numpy()
         p_wb = p_wb.cpu().numpy()
@@ -316,20 +339,28 @@ def main():
         left_arm_vel = joint_vel[:, larm_ind].cpu().numpy()
         right_arm_vel = joint_vel[:, rarm_ind].cpu().numpy()
 
+        left_legs[:,0] -= pi/2  # fix hip yaw
+        left_legs[:,1] += pi/2  # fix hip roll
+        right_legs[:,0] -= pi/2  # fix hip yaw
+        right_legs[:,1] += pi/2  # fix hip roll
+
         tau_list = []
         #Input joint configurations and robot states to the controller
         for i, ctrl in enumerate(controller):
-            ctrl.get_robot_state(
-                left_legs[i], right_legs[i],
-                left_leg_vel[i], right_leg_vel[i],
-                left_arms[i], right_arms[i],
-                left_arm_vel[i], right_arm_vel[i],
-                R_wb[i], p_wb[i], w_bb[i], v_bb[i], a_wb[i], v_wb[i]
+
+            kPc = [100, 100, 300]  # position gains
+            kDc = [1, 1, 1]     # velocity gains
+            tau = ctrl.compute_tau(
+                left_legs[i,:], right_legs[i,:],
+                left_leg_vel[i,:], right_leg_vel[i,:],
+                left_arms[i,:], right_arms[i,:],
+                left_arm_vel[i,:], right_arm_vel[i,:],
+                R_wb[i,:], p_wb[i,:], w_bb[i,:], v_bb[i,:], a_wb[i,:], v_wb[i,:],
+                kPc, kDc,
+                roll[i], pitch[i], yaw[i]
             )
-            kPc = [50,50, 100]  # position gains
-            kDc = [1,1,1.5]     # velocity gains
-            ctrl.compute(kPc, kDc,roll[i], pitch[i], yaw[i])
-            tau = ctrl.get_tau()
+            
+            
             # reorganize to isaac lab joint order
             tau_isaac = np.zeros(len(joint_names))
 
@@ -348,13 +379,15 @@ def main():
             tau_list.append(tau_isaac)
 
 
+
         tau_tensor = torch.tensor(tau_list, dtype=torch.float32, device=sim.device)
+        # print('Applied joint torques:', tau_tensor)
         bruce_robot.set_joint_effort_target(tau_tensor)
         scene.write_data_to_sim()
         sim.step()
         scene.update(sim.get_physics_dt())
-        print("Simulation time:", time.time() - current_time)
-        time.sleep(0.1)  # to avoid busy-waiting
+        # print("Simulation time:", time.time() - current_time)
+        # time.sleep(0.1)  # to avoid busy-waiting
 
 # Run
 if __name__ == "__main__":

@@ -692,7 +692,6 @@ def robotFK(R, p, w, bv,
     dqr = np.array([rd1, rd2, rd3, rd4, rd5])
     dql = np.array([ld1, ld2, ld3, ld4, ld5])
 
-    print('w',w.shape, 'bv',bv.shape, 'dqr',dqr.shape, 'dql',dql.shape)
     dqAll = np.hstack((w, bv, dqr, dql))
 
     # foot velocity in world frame

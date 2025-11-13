@@ -59,6 +59,9 @@ def clip_force(F):
     F[1] = np.clip(F[1], -10.0, 10.0)
     return F
 
+
+
+
 class ContactForceController:
     def __init__(self, idx):
         self.integrator = np.zeros((3, 1))
@@ -71,21 +74,46 @@ class ContactForceController:
         self.qJointsDes = np.zeros(16)
         self.ddq_sol = np.zeros(16)
 
-    def get_robot_state(self, left_legs, right_legs, 
+    
+    def world2com(self,pos_w, Jacob_w):
+        # Transformation from world to CoM frame
+
+        R_w2c = self.R_wb.T # No rotation between world and CoM frame
+        relative_pos = pos_w - self.p_wg  # Vector from CoM to point in world frame
+        pos_c = R_w2c @ relative_pos  # target Position in CoM frame
+        Jacob_c = R_w2c @ Jacob_w  # target Jacobian in CoM frame
+
+
+        # Ajoint matrix for transforming spatial velocities between frames
+        # X_wc = np.zeros((6,6))
+        # p_c_c = R_w2c @ self.p_wg # Position of CoM in CoM frame
+        # X_cw[:3, :3] = R_cw
+        # X_cw[3:, 3:] = R_cw
+        # X_cw[3:, :3] = -R_cw @ skew(p_cw) 
+
+        return pos_c, Jacob_c
+
+    def compute_tau(self, left_legs, right_legs, 
                         left_leg_vel, right_leg_vel,
                         left_arm, right_arm,
                         left_arm_vel, right_arm_vel,
-                        R_wb, p_wb, w_bb, v_bb, a_wb,v_wb):
+                        R_wb, p_wb, w_bb, v_bb, a_wb,v_wb,
+                        kPc, kDc, 
+                        roll, pitch, yaw):
         
+        # print('leg joint positions:', right_legs, left_legs)
+        self.R_wb = R_wb
+    
         r1, r2, r3, r4, r5 = right_legs[0], right_legs[1], right_legs[2], right_legs[3], right_legs[4]
         l1, l2, l3, l4, l5 = left_legs[0], left_legs[1], left_legs[2], left_legs[3], left_legs[4]
         dr1, dr2, dr3, dr4, dr5 = right_leg_vel[0], right_leg_vel[1], right_leg_vel[2], right_leg_vel[3], right_leg_vel[4]
         dl1, dl2, dl3, dl4, dl5 = left_leg_vel[0], left_leg_vel[1], left_leg_vel[2], left_leg_vel[3], left_leg_vel[4]
         
-
+        
         #reorganize joint states
-        self.qJoints = np.concatenate((right_legs, left_legs,right_arm,left_arm))
-        self.dqJoints = np.concatenate((right_leg_vel, left_leg_vel,right_arm_vel,left_arm_vel))
+        qJoints = np.concatenate((right_legs, left_legs,right_arm,left_arm))
+        dqJoints = np.concatenate((right_leg_vel, left_leg_vel,right_arm_vel,left_arm_vel))
+        
         # compute leg forward kinematics
         p_bt_r, v_bt_r, Jv_bt_r, dJv_bt_r, \
         p_bh_r, v_bh_r, Jv_bh_r, dJv_bh_r, \
@@ -98,7 +126,9 @@ class ContactForceController:
                                                                 l1, l2, l3, l4, l5,
                                                                 dr1, dr2, dr3, dr4, dr5,
                                                                 dl1, dl2, dl3, dl4, dl5)
-        print('Right foot pos:', p_bf_r.flatten(), 'left joint pos:', l1, l2, l3, l4, l5)
+        
+        
+        # print('Right foot pos:', p_bf_r.flatten(), 'left joint pos:', l1, l2, l3, l4, l5)
         # compute robot forward kinematics
         p_wt_r, v_wt_r, Jv_wt_r, dJvdq_wt_r, \
         p_wh_r, v_wh_r, Jv_wh_r, dJvdq_wh_r, \
@@ -119,15 +149,7 @@ class ContactForceController:
                                                           dr1, dr2, dr3, dr4, dr5,
                                                           dl1, dl2, dl3, dl4, dl5)
         
-        # store contact point positions in world frame
-        self.p_wt_r = p_wt_r
-        self.p_wh_r = p_wh_r
-        self.p_wt_l = p_wt_l
-        self.p_wh_l = p_wh_l
-        self.Jv_wt_r = Jv_wt_r
-        self.Jv_wh_r = Jv_wh_r
-        self.Jv_wt_l = Jv_wt_l
-        self.Jv_wh_l = Jv_wh_l
+        
 
         # calculate robot dynamics
         H, CG, AG, dAGdq, p_wg, v_wg, k_wg = dyn.robotID(R_wb, p_wb, w_bb, v_bb,
@@ -136,43 +158,26 @@ class ContactForceController:
                                                          dr1, dr2, dr3, dr4, dr5,
                                                          dl1, dl2, dl3, dl4, dl5)
         
-        # store dynamics CoM state
-        self.k_wg = k_wg
+       
         self.p_wg = p_wg
-        self.v_wg = v_wg
-        self.H = H
-        self.CG = CG
-        print('CoM pos:', p_wg.flatten())
-
     
-    def compute(self, kPc, kDc, roll, pitch, yaw):
-        p_wt_r = self.p_wt_r
-        p_wh_r = self.p_wh_r
-        p_wt_l = self.p_wt_l
-        p_wh_l = self.p_wh_l
-        k_wg = self.k_wg
-        p_wg = self.p_wg
-        v_wg = self.v_wg
-        counter = self.counter
-
-
-
         comPos = np.reshape(p_wg, (3, 1))
         comVel = np.reshape(v_wg, (3, 1))
-        zVc = 0.42
+        zVc = 0.38
 
         # Initialize desired DCM
-        if counter == 0 or self.dcmPosDes is None:
+        if self.counter == 0 or self.dcmPosDes is None:
             self.dcmPosDes = np.array([[comPos.item(0)],
                                        [comPos.item(1)],
                                        [zVc]])
 
         # Compute CoM/velocity errors
         comPosDes = self.dcmPosDes - (math.sqrt(zVc / self.gGrav) * comVel)
+        # print('Desired CoM pos:', comPosDes.flatten(), 'Current CoM velocity:', comVel.flatten(),' Current CoM pos:', comPos.flatten())
         comPosError = comPosDes - comPos
 
         kIc = np.diag([30, 1, 80])
-        if counter == 0:
+        if self.counter == 0:
             self.integrator = np.zeros((3, 1))
         if abs(comPosError.item(2)) >= 0.001:
             self.integrator += comPosError * 0.002
@@ -187,9 +192,21 @@ class ContactForceController:
         gGravComp = np.array([[0.0], [0.0], [self.mass * self.gGrav]])
 
         fGD = comPosErrorSignal + comVelErrorSignal + integralSignal + gGravComp
+        # print('Desired GRF:', fGD.flatten())
 
         # Build contact mapping
-        rP_tl, rP_tr, rP_hl, rP_hr = map(skew, [p_wt_l, p_wt_r, p_wh_l, p_wh_r])
+        # rP_tl, rP_tr, rP_hl, rP_hr = map(skew, [p_wt_l, p_wt_r, p_wh_l, p_wh_r])
+        
+        results = [self.world2com(p, J)
+           for p, J in [(p_wt_l, Jv_wt_l),
+                        (p_wt_r, Jv_wt_r),
+                        (p_wh_l, Jv_wh_l),
+                        (p_wh_r, Jv_wh_r)]]
+
+        (p_ct_l, Jltj), (p_ct_r, Jrtj), (p_ch_l, Jlhj), (p_ch_r, Jrhj) = results
+
+
+        rP_tl, rP_tr, rP_hl, rP_hr = map(skew, [p_ct_l, p_ct_r, p_ch_l, p_ch_r])
         idMats = np.concatenate([np.eye(3)] * 4, axis=1)
         rpMats = np.concatenate([rP_tr, rP_hr, rP_tl, rP_hl], axis=1)
         Gc = np.concatenate((idMats, rpMats), axis=0)
@@ -204,37 +221,31 @@ class ContactForceController:
         ])
 
         fcDes = (GcInv @ fGaDes).T
+        # print('Desired contact forces:', fcDes)
 
-        self.fcDes = fcDes
-        self.Ginv = GcInv
-
-        self.counter += 1
-        return fcDes
-
+        
     # ---------------------------------------------
     # Compute torque command from joint data & contact forces
     # ---------------------------------------------
-    def get_tau(self):
 
-        Hj = self.H[6:16, :]
-        CGj = self.CG[6:16]
 
-        Jrtj = self.Jv_wt_r[:, 6:16]
-        Jrhj = self.Jv_wh_r[:, 6:16]
-        Jltj = self.Jv_wt_l[:, 6:16]
-        Jlhj = self.Jv_wh_l[:, 6:16]
+        Hj = H[6:16, :]
+        CGj = CG[6:16]
 
-        Frt = self.fcDes[0:3]
-        Frh = self.fcDes[3:6]
-        Flt = self.fcDes[6:9]
-        Flh = self.fcDes[9:12]
+        Jrtj = Jrtj[:, 6:16]
+        Jrhj = Jrhj[:, 6:16]
+        Jltj = Jltj[:, 6:16]
+        Jlhj = Jlhj[:, 6:16]
+
+        Frt = fcDes[0:3]
+        Frh = fcDes[3:6]
+        Flt = fcDes[6:9]
+        Flh = fcDes[9:12]
 
         ddq = self.ddq_sol
-        qJoints = self.qJoints
-        dqJoints = self.dqJoints
+
         qInitJoints = self.qInitJoints
         
-        GcInv = self.Ginv
 
         jointError = qInitJoints[0:10] - qJoints[0:10]
 
@@ -259,8 +270,8 @@ class ContactForceController:
 
         #Arm joint space PD gains, this controller not control arm
         arm_goal_target = np.array([-0.7, 1.3, 2.0, 0.7, -1.3, -2.0])
-        arm_p_gains = np.array([ 1.6,  1.6,  1.6, 1.6,  1.6,  1.6])
-        arm_d_gains = np.array([0.03, 0.03, 0.03, 0.03, 0.03, 0.03])
+        arm_p_gains = np.diag([ 1.6,  1.6,  1.6, 1.6,  1.6,  1.6])
+        arm_d_gains = np.diag([0.03, 0.03, 0.03, 0.03, 0.03, 0.03])
         
 
         # Torque composition
@@ -270,17 +281,19 @@ class ContactForceController:
                - Jlhj.T @ Flh
                + kDJ @ (-dqJoints[0:10])
                - nullSpaceTorque)
+        # print('Joint torques:', tau, tau.shape)
 
         # add joint-space feedback
-        tau += (kPJ @ jointError) - (kDJ2 @ dqJoints[0:10])
+        # tau += (kPJ @ jointError) - (kDJ2 @ dqJoints[0:10])
 
         # Add arm position control torques, operate element-wise multiplication should use *
         
-        arm_joint_tau = arm_p_gains *(arm_goal_target - qJoints[10:16]) + arm_d_gains * (-dqJoints[10:16])
-
+        arm_joint_tau = arm_p_gains @ (arm_goal_target - qJoints[10:16]) + arm_d_gains @ (-dqJoints[10:16])
+        # print('Arm joint torques:', arm_joint_tau, arm_joint_tau.shape)
 
         # Add arm position control torques
         tau = np.concatenate((tau,arm_joint_tau))
+        self.counter += 1
         return tau
 
 if __name__ == '__main__':
